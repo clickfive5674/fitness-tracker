@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title># Daily Workout</title>
+<title>＃Daily Workout</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -504,7 +504,7 @@
         <div class="card-icon icon-morning">⚖️</div>
         <div>
           <div class="card-label">體重趨勢</div>
-          <div class="card-sublabel">早晨 vs 就寢 · 近7天</div>
+          <div class="card-sublabel">早晨 vs 就寢 · 近90天</div>
         </div>
       </div>
       <div class="chart-wrap"><canvas id="weightChart"></canvas></div>
@@ -516,7 +516,7 @@
         <div class="card-icon" style="background:#ffe4e4;">❤️</div>
         <div>
           <div class="card-label">靜息心率</div>
-          <div class="card-sublabel">早晨趨勢 · 近7天</div>
+          <div class="card-sublabel">早晨趨勢 · 近90天</div>
         </div>
       </div>
       <div class="chart-wrap"><canvas id="hrChart"></canvas></div>
@@ -588,12 +588,11 @@ const CONFIG = {
 
 /* ── 預設菜單 ── */
 const DEFAULT_STRENGTH = `每週2次：
-1. 四足撐體 6–8次呼吸 × 1組
-2. 動態撐體 6-8次 × 3組
-3. 後腳抬高蹲 12次 × 3組
-4. 站姿繩索划船（5-15kg） 10次 × 1組
-5. 壺鈴相撲硬舉（8-12kg） 10-12次 × 3組
-6. 同側單邊水平推（5-10kg） 10次 × 3組`;
+1. 四足跪姿呼吸穩定 6–8次呼吸 × 3組
+2. 保加利亞分腿蹲 12次 × 3組
+3. 羅馬尼亞硬舉 10次 × 3組
+4. 伏地挺身變化式 10–15次 × 3組
+5. 帕洛夫推壓 12次 × 3組`;
 
 const DEFAULT_CARDIO = `每週4–5次，30–40分鐘
 心率目標：130–140 bpm
@@ -657,13 +656,25 @@ function renderExerciseChecklist() {
 /* ══════════════════════════════════════════════════════
    菜單儲存
 ══════════════════════════════════════════════════════ */
-function saveMenus() {
+async function saveMenus() {
   state.strengthMenu = document.getElementById('strength-menu').value;
   state.cardioMenu   = document.getElementById('cardio-menu').value;
   localStorage.setItem('strengthMenu', state.strengthMenu);
   localStorage.setItem('cardioMenu',   state.cardioMenu);
   renderTodayRoutine();
   renderExerciseChecklist();
+
+  // 同步菜單到 Google Sheets（menu 工作表）
+  const url = CONFIG.VITALS_WEBHOOK || CONFIG.WORKOUTS_WEBHOOK;
+  if (url) {
+    await sendToSheet(url, {
+      sheet: 'Menu',
+      updatedAt: new Date().toLocaleString('zh-TW'),
+      strengthMenu: state.strengthMenu,
+      cardioMenu:   state.cardioMenu
+    });
+  }
+
   const badge = document.getElementById('menu-saved-badge');
   badge.classList.add('show');
   setTimeout(() => badge.classList.remove('show'), 2500);
@@ -816,7 +827,7 @@ function renderCharts(vitals, workouts) {
 
   // ── 整理近14天的 vitals（依日期排序）──
   const sorted = [...vitals].sort((a,b) => String(a.date).localeCompare(String(b.date)));
-  const last14 = sorted.slice(-14);
+  const last90 = sorted.slice(-90);
 
   // 日期標籤（月/日）
   const dateLabel = d => {
@@ -833,7 +844,7 @@ function renderCharts(vitals, workouts) {
 
   // 取出每天早晨/就寢資料（一天可能多筆，取最後一筆）
   const byDate = {};
-  last14.forEach(r => {
+  last90.forEach(r => {
     const d = String(r.date);
     if (!byDate[d]) byDate[d] = {};
     if (String(r.type).toLowerCase().includes('morning') ||
