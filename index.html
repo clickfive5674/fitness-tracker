@@ -613,15 +613,15 @@ function renderExerciseChecklist() {
     .map(l => l.replace(/^\d+\.\s*/, '').trim())
     .filter(l => l && !/^每週/.test(l));
 
-  lines.forEach((line, i) => {
-    const item = document.createElement('label');
+  lines.forEach((line) => {
+    const item = document.createElement('div');
     item.className = 'check-item';
     item.innerHTML = `
-      <input type="checkbox">
       <div class="check-box">
         <svg viewBox="0 0 12 12" fill="none" stroke="currentColor"><polyline points="2 6 5 9 10 3"/></svg>
       </div>
       <span class="check-label">${line}</span>`;
+    // 直接監聽 div，不再有 label/checkbox 的雙重觸發問題
     item.addEventListener('click', () => item.classList.toggle('checked'));
     list.appendChild(item);
   });
@@ -904,22 +904,40 @@ function updateRing(current, target) {
 
 /* ── 從 Google Sheets 讀取資料 ── */
 function fetchJsonp(url) {
-  // Apps Script doGet 有 CORS 限制，用 JSONP 繞過
+  // Apps Script doGet CORS 限制 → 用 JSONP 繞過
+  // Apps Script 會先 302 redirect 到 googleapis.com，script tag 可以跟隨
   return new Promise((resolve, reject) => {
     const cbName = '_cb_' + Date.now();
     const script = document.createElement('script');
+    let settled = false;
+
     const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
       cleanup();
-      reject(new Error('timeout'));
-    }, 10000);
+      reject(new Error('請求逾時，請確認 Apps Script 已重新部署'));
+    }, 15000);
+
     function cleanup() {
       clearTimeout(timer);
       delete window[cbName];
-      script.remove();
+      if (script.parentNode) script.parentNode.removeChild(script);
     }
-    window[cbName] = (data) => { cleanup(); resolve(data); };
-    script.src = url + (url.includes('?') ? '&' : '?') + 'callback=' + cbName;
-    script.onerror = () => { cleanup(); reject(new Error('script load error')); };
+
+    window[cbName] = (data) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(data);
+    };
+
+    script.src = url + '?callback=' + cbName + '&t=' + Date.now(); // t= 防快取
+    script.onerror = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(new Error('無法載入 Apps Script，請確認部署權限為「任何人」'));
+    };
     document.head.appendChild(script);
   });
 }
