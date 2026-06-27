@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>＃Daily Workout</title>
+<title># Daily Workout</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -557,7 +557,7 @@
 /* ══════════════════════════════════════════════════════
    設定 — 請替換為你的 Apps Script 網址
 ══════════════════════════════════════════════════════ */
-const WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbzYlMfbwtyjJXGjX2V10fZ5AIGbvj5J-iKbFIQBdpeNatBALjMLKWBQBD1owzYZbg7U/exec';
+const WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbwD7NcTSldMqosQgIwDkR3eFb3GLpfpat6dckbtzJloGlxTtuYJ9PwGJGe5E1bP-a5B/exec';
 const CONFIG = {
   VITALS_WEBHOOK:   WEBHOOK_URL,
   WORKOUTS_WEBHOOK: WEBHOOK_URL,
@@ -785,8 +785,6 @@ function initCharts() {
 
   updateRing(0, 150);
 
-  // 有設定 webhook 就自動載入一次
-  if (CONFIG.VITALS_WEBHOOK) refreshAnalytics();
 }
 
 /* ── 用真實資料更新圖表 ── */
@@ -902,46 +900,7 @@ function updateRing(current, target) {
   document.getElementById('ring-label').textContent = `/ 150 分鐘`;
 }
 
-/* ── 從 Google Sheets 讀取資料 ── */
-function fetchJsonp(url) {
-  // Apps Script doGet CORS 限制 → 用 JSONP 繞過
-  // Apps Script 會先 302 redirect 到 googleapis.com，script tag 可以跟隨
-  return new Promise((resolve, reject) => {
-    const cbName = '_cb_' + Date.now();
-    const script = document.createElement('script');
-    let settled = false;
-
-    const timer = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      reject(new Error('請求逾時，請確認 Apps Script 已重新部署'));
-    }, 15000);
-
-    function cleanup() {
-      clearTimeout(timer);
-      delete window[cbName];
-      if (script.parentNode) script.parentNode.removeChild(script);
-    }
-
-    window[cbName] = (data) => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      resolve(data);
-    };
-
-    script.src = url + '?callback=' + cbName + '&t=' + Date.now(); // t= 防快取
-    script.onerror = () => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      reject(new Error('無法載入 Apps Script，請確認部署權限為「任何人」'));
-    };
-    document.head.appendChild(script);
-  });
-}
-
+/* ── 從 Google Sheets 讀取資料（fetch + CORS）── */
 async function refreshAnalytics() {
   const btn = document.querySelector('[onclick="refreshAnalytics()"]');
   const origText = btn.innerHTML;
@@ -949,10 +908,16 @@ async function refreshAnalytics() {
   btn.disabled = true;
 
   try {
-    const json = await fetchJsonp(WEBHOOK_URL);
+    // Apps Script doGet 需在回應加 CORS header 才能用 fetch 讀取
+    const res = await fetch(WEBHOOK_URL + '?action=getData&t=' + Date.now(), {
+      method: 'GET',
+      redirect: 'follow',
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const json = await res.json();
     if (json.status === 'error') throw new Error(json.message);
     renderCharts(json.vitals || [], json.workouts || []);
-    showToast(`已更新：${(json.vitals||[]).length} 筆生理、${(json.workouts||[]).length} 筆訓練`);
+    showToast('已更新：' + (json.vitals||[]).length + ' 筆生理、' + (json.workouts||[]).length + ' 筆訓練');
   } catch(err) {
     console.error('[Analytics]', err);
     showToast('讀取失敗：' + err.message, true);
