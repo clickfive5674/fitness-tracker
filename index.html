@@ -296,12 +296,6 @@
   }
   .saved-badge.show { opacity: 1; }
 
-  /* ── Webhook card ── */
-  .webhook-card {
-    background: linear-gradient(135deg, #f0f4ff, #e8eeff);
-    border-color: #c8d0f5;
-  }
-
   /* ── Scrollbar ── */
   ::-webkit-scrollbar { width: 3px; }
   ::-webkit-scrollbar-track { background: transparent; }
@@ -455,24 +449,6 @@
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>已儲存
       </span>
     </div>
-
-    <div class="card webhook-card" style="margin-top:16px;">
-      <div class="card-header">
-        <div class="card-icon" style="background:#dde4ff;font-size:16px;">🔗</div>
-        <div>
-          <div class="card-label">Google Sheets 同步</div>
-          <div class="card-sublabel">Apps Script Webhook 網址</div>
-        </div>
-      </div>
-      <div class="field">
-        <label>生理數據（Vitals）Webhook</label>
-        <input id="webhook-vitals" type="text" inputmode="url" style="font-family:var(--mono);font-size:11.5px;" placeholder="https://script.google.com/macros/s/YOUR_VITALS_ID/exec">
-      </div>
-      <div class="field">
-        <label>訓練紀錄（Workouts）Webhook</label>
-        <input id="webhook-workouts" type="text" inputmode="url" style="font-family:var(--mono);font-size:11.5px;" placeholder="https://script.google.com/macros/s/YOUR_WORKOUTS_ID/exec">
-      </div>
-      <button class="btn btn-outline" onclick="saveWebhooks()">儲存 Webhook 網址</button>
     </div>
 
   </div>
@@ -581,22 +557,23 @@
 /* ══════════════════════════════════════════════════════
    設定 — 請替換為你的 Apps Script 網址
 ══════════════════════════════════════════════════════ */
+const WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbzYlMfbwtyjJXGjX2V10fZ5AIGbvj5J-iKbFIQBdpeNatBALjMLKWBQBD1owzYZbg7U/exec';
 const CONFIG = {
-  VITALS_WEBHOOK:   localStorage.getItem('webhook_vitals')   || '',
-  WORKOUTS_WEBHOOK: localStorage.getItem('webhook_workouts') || '',
+  VITALS_WEBHOOK:   WEBHOOK_URL,
+  WORKOUTS_WEBHOOK: WEBHOOK_URL,
 };
 
 /* ── 預設菜單 ── */
 const DEFAULT_STRENGTH = `每週2次：
-1. 四足跪姿呼吸穩定 6–8次呼吸 × 3組
-2. 保加利亞分腿蹲 12次 × 3組
-3. 羅馬尼亞硬舉 10次 × 3組
-4. 伏地挺身變化式 10–15次 × 3組
-5. 帕洛夫推壓 12次 × 3組`;
+1. 四足撐體 6–8次呼吸 × 1組
+2. 動態撐體 6-8次 × 3組
+3. 後腳抬高蹲 12次 × 3組
+4. 站姿繩索划船(5-15kg) 10次 × 1組
+5. 壺鈴相撲硬舉 10-12次 × 3組
+6. 同側單邊水平推(5-10kg) 10次 × 3組`;
 
 const DEFAULT_CARDIO = `每週4–5次，30–40分鐘
-心率目標：130–140 bpm
-方式：快走/慢跑、腳踏車或划船機`;
+心率目標：130–140 bpm`;
 
 /* ── 狀態 ── */
 let state = {
@@ -616,9 +593,6 @@ function init() {
 
   document.getElementById('strength-menu').value = state.strengthMenu;
   document.getElementById('cardio-menu').value   = state.cardioMenu;
-  document.getElementById('webhook-vitals').value   = CONFIG.VITALS_WEBHOOK;
-  document.getElementById('webhook-workouts').value = CONFIG.WORKOUTS_WEBHOOK;
-
   renderTodayRoutine();
   renderExerciseChecklist();
   initCharts();
@@ -680,13 +654,7 @@ async function saveMenus() {
   setTimeout(() => badge.classList.remove('show'), 2500);
 }
 
-function saveWebhooks() {
-  CONFIG.VITALS_WEBHOOK   = document.getElementById('webhook-vitals').value.trim();
-  CONFIG.WORKOUTS_WEBHOOK = document.getElementById('webhook-workouts').value.trim();
-  localStorage.setItem('webhook_vitals',   CONFIG.VITALS_WEBHOOK);
-  localStorage.setItem('webhook_workouts', CONFIG.WORKOUTS_WEBHOOK);
-  showToast('Webhook 網址已儲存');
-}
+
 
 /* ══════════════════════════════════════════════════════
    提交紀錄
@@ -737,7 +705,6 @@ async function submitBedtime() {
    Google Sheets 同步
 ══════════════════════════════════════════════════════ */
 async function sendToSheet(url, data) {
-  if (!url) { console.log('[Sheets] 尚未設定 Webhook。資料：', data); return; }
   try {
     await fetch(url, {
       method: 'POST', mode: 'no-cors',
@@ -937,11 +904,7 @@ function updateRing(current, target) {
 
 /* ── 從 Google Sheets 讀取資料 ── */
 async function refreshAnalytics() {
-  const url = CONFIG.VITALS_WEBHOOK || CONFIG.WORKOUTS_WEBHOOK;
-  if (!url) {
-    showToast('請先在菜單設定 Webhook 網址', true);
-    return;
-  }
+  const url = WEBHOOK_URL;
 
   const btn = document.querySelector('[onclick="refreshAnalytics()"]');
   const origText = btn.innerHTML;
