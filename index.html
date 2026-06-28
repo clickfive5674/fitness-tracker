@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title># Daily Workout</title>
+<title>健康紀錄 v4</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -557,7 +557,7 @@
 /* ══════════════════════════════════════════════════════
    設定 — 請替換為你的 Apps Script 網址
 ══════════════════════════════════════════════════════ */
-const WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbxp_F_xP_WCm-C3Df-1dUyDJncujokD3fWmNT7O_xZfJGYlnULQ-Jo422S5Z0z0orzL/exec';
+const WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbzYlMfbwtyjJXGjX2V10fZ5AIGbvj5J-iKbFIQBdpeNatBALjMLKWBQBD1owzYZbg7U/exec';
 const CONFIG = {
   VITALS_WEBHOOK:   WEBHOOK_URL,
   WORKOUTS_WEBHOOK: WEBHOOK_URL,
@@ -900,7 +900,35 @@ function updateRing(current, target) {
   document.getElementById('ring-label').textContent = `/ 150 分鐘`;
 }
 
-/* ── 從 Google Sheets 讀取資料（fetch + CORS）── */
+/* ── 從 Google Sheets 公開 CSV 讀取資料（無 CORS 問題）── */
+// 試算表 ID
+const SHEET_ID = '1RNzFmymYa33JC9ffAl_KryVCCPD87vfLgrk93T-Nw-U';
+// 工作表 gid（vitals=0, workouts=492722919）— 依實際調整
+const GID_VITALS   = '0';
+const GID_WORKOUTS = '492722919';
+
+function csvUrl(gid) {
+  return `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${gid}&t=` + Date.now();
+}
+
+function parseCsv(text) {
+  const lines = text.trim().split('\n');
+  if (lines.length < 2) return [];
+  // 跳過第一列（表頭）
+  return lines.slice(1).map(line => {
+    // 處理欄位中有逗號（被引號包住）的情況
+    const cols = [];
+    let cur = '', inQ = false;
+    for (const ch of line) {
+      if (ch === '"') { inQ = !inQ; }
+      else if (ch === ',' && !inQ) { cols.push(cur.trim()); cur = ''; }
+      else { cur += ch; }
+    }
+    cols.push(cur.trim());
+    return cols;
+  }).filter(cols => cols.some(c => c !== ''));
+}
+
 async function refreshAnalytics() {
   const btn = document.querySelector('[onclick="refreshAnalytics()"]');
   const origText = btn.innerHTML;
@@ -908,16 +936,41 @@ async function refreshAnalytics() {
   btn.disabled = true;
 
   try {
-    // Apps Script doGet 需在回應加 CORS header 才能用 fetch 讀取
-    const res = await fetch(WEBHOOK_URL + '?action=getData&t=' + Date.now(), {
-      method: 'GET',
-      redirect: 'follow',
-    });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const json = await res.json();
-    if (json.status === 'error') throw new Error(json.message);
-    renderCharts(json.vitals || [], json.workouts || []);
-    showToast('已更新：' + (json.vitals||[]).length + ' 筆生理、' + (json.workouts||[]).length + ' 筆訓練');
+    // 同時抓兩張表的 CSV
+    const [vRes, wRes] = await Promise.all([
+      fetch(csvUrl(GID_VITALS)),
+      fetch(csvUrl(GID_WORKOUTS))
+    ]);
+
+    if (!vRes.ok) throw new Error('vitals CSV 讀取失敗 ' + vRes.status);
+    if (!wRes.ok) throw new Error('workouts CSV 讀取失敗 ' + wRes.status);
+
+    const [vText, wText] = await Promise.all([vRes.text(), wRes.text()]);
+
+    const vRows = parseCsv(vText);
+    const wRows = parseCsv(wText);
+
+    // CSV 欄位順序：日期,時間,類型,體重,心率
+    const vitals = vRows.map(r => ({
+      date:      r[0] || '',
+      time:      r[1] || '',
+      type:      r[2] || '',
+      weight:    parseFloat(r[3]) || 0,
+      heartRate: parseFloat(r[4]) || 0,
+    }));
+
+    // CSV 欄位順序：日期,時間,完成項目,有氧時間,備註
+    const workouts = wRows.map(r => ({
+      date:                r[0] || '',
+      time:                r[1] || '',
+      completedExercises:  r[2] || '',
+      cardioMinutes:       parseFloat(r[3]) || 0,
+      notes:               r[4] || '',
+    }));
+
+    renderCharts(vitals, workouts);
+    showToast('已更新：' + vitals.length + ' 筆生理、' + workouts.length + ' 筆訓練');
+
   } catch(err) {
     console.error('[Analytics]', err);
     showToast('讀取失敗：' + err.message, true);
