@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>健康紀錄 v4</title>
+<title>健康紀錄 v5</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -557,7 +557,7 @@
 /* ══════════════════════════════════════════════════════
    設定 — 請替換為你的 Apps Script 網址
 ══════════════════════════════════════════════════════ */
-const WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbzdP1fNX5DASAh1Eq2aN9Wnpdi2OFGa40dJci-eVI9ZwG1KR4of41_MeNAZn-D7TIA6/exec';
+const WEBHOOK_URL = 'https://fitness-proxy.clickfive5674.workers.dev/';
 const CONFIG = {
   VITALS_WEBHOOK:   WEBHOOK_URL,
   WORKOUTS_WEBHOOK: WEBHOOK_URL,
@@ -705,14 +705,15 @@ async function submitBedtime() {
    Google Sheets 同步
 ══════════════════════════════════════════════════════ */
 async function sendToSheet(url, data) {
-  // no-cors POST 在 Apps Script redirect 流程中會被丟棄
-  // 改用 GET + query string，瀏覽器可跟隨 redirect，Apps Script doGet 接收
+  // 透過 Cloudflare Worker proxy → Apps Script doPost
   try {
-    const params = new URLSearchParams({ action: 'write', payload: JSON.stringify(data) });
-    await fetch(url + '?' + params.toString() + '&t=' + Date.now(), {
-      method: 'GET',
-      redirect: 'follow',
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
     });
+    const json = await res.json();
+    if (json.status !== 'ok') console.warn('[Sheets] 回應異常：', json);
   } catch (e) {
     console.error('[Sheets] 同步失敗：', e);
   }
