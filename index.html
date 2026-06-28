@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>健康紀錄 v5</title>
+<title>健康紀錄 v6</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -799,17 +799,14 @@ function renderCharts(vitals, workouts) {
   const sorted = [...vitals].sort((a,b) => String(a.date).localeCompare(String(b.date)));
   const last90 = sorted.slice(-90);
 
-  // 日期標籤（月/日）
+  // 日期標籤（月/日）— 輸入已是 yyyy-mm-dd
   const dateLabel = d => {
     const s = String(d);
-    // 支援 yyyy-mm-dd 或 Google Sheets 序列數字格式
     if (s.includes('-')) {
       const parts = s.split('-');
       return `${parseInt(parts[1])}/${parseInt(parts[2])}`;
     }
-    // Google Sheets 日期序號轉換（從1899-12-30起算）
-    const jsDate = new Date((Number(s) - 25569) * 86400 * 1000);
-    return `${jsDate.getMonth()+1}/${jsDate.getDate()}`;
+    return s;
   };
 
   // 取出每天早晨/就寢資料（一天可能多筆，取最後一筆）
@@ -860,12 +857,8 @@ function renderCharts(vitals, workouts) {
   const weekLabels = weekDays.map(d => `${d.getMonth()+1}/${d.getDate()}`);
 
   // 把 workouts 的日期全部統一成 yyyy-mm-dd 字串
-  const normalizeDate = d => {
-    const s = String(d);
-    if (s.includes('-')) return s.slice(0,10);
-    const jsDate = new Date((Number(s) - 25569) * 86400 * 1000);
-    return jsDate.toISOString().slice(0,10);
-  };
+  // workouts 日期已在 CSV 解析時正規化為 yyyy-mm-dd
+  const normalizeDate = d => String(d).slice(0,10);
 
   const weekCardio = weekDays.map(day => {
     const key = day.toISOString().slice(0,10);
@@ -955,23 +948,46 @@ async function refreshAnalytics() {
     const vRows = parseCsv(vText);
     const wRows = parseCsv(wText);
 
+    // Google Sheets CSV 日期可能是 2025/6/28 或 2025-06-28，統一成 yyyy-mm-dd
+    function normDate(s) {
+      s = String(s).trim();
+      if (!s) return '';
+      // 斜線格式：2025/6/28 or 6/28/2025
+      if (s.includes('/')) {
+        const p = s.split('/');
+        if (p[0].length === 4) {
+          // yyyy/m/d
+          return p[0] + '-' + p[1].padStart(2,'0') + '-' + p[2].padStart(2,'0');
+        } else {
+          // m/d/yyyy
+          return p[2] + '-' + p[0].padStart(2,'0') + '-' + p[1].padStart(2,'0');
+        }
+      }
+      // 已是 yyyy-mm-dd
+      if (s.includes('-')) return s.slice(0,10);
+      return s;
+    }
+
     // CSV 欄位順序：日期,時間,類型,體重,心率
     const vitals = vRows.map(r => ({
-      date:      r[0] || '',
+      date:      normDate(r[0]),
       time:      r[1] || '',
-      type:      r[2] || '',
+      type:      (r[2] || '').trim(),
       weight:    parseFloat(r[3]) || 0,
       heartRate: parseFloat(r[4]) || 0,
     }));
 
     // CSV 欄位順序：日期,時間,完成項目,有氧時間,備註
     const workouts = wRows.map(r => ({
-      date:                r[0] || '',
+      date:                normDate(r[0]),
       time:                r[1] || '',
       completedExercises:  r[2] || '',
       cardioMinutes:       parseFloat(r[3]) || 0,
       notes:               r[4] || '',
     }));
+
+    console.log('[Analytics] vitals 筆數:', vitals.length, '首筆:', vitals[0]);
+    console.log('[Analytics] workouts 筆數:', workouts.length, '首筆:', workouts[0]);
 
     renderCharts(vitals, workouts);
     showToast('已更新：' + vitals.length + ' 筆生理、' + workouts.length + ' 筆訓練');
